@@ -1,14 +1,14 @@
-# Vitals — agent notes
+# GVitals — agent notes
 
-GNOME Shell extension (`Vitals@CoreCoding.com`) that polls hardware sensors asynchronously and shows them in the top bar. Runtime is GJS ES modules (Shell 45–50). Official getting-started and practices: [Creating an extension](https://gjs.guide/extensions/development/creating.html), [Anatomy](https://gjs.guide/extensions/overview/anatomy.html), [Imports](https://gjs.guide/extensions/overview/imports-and-modules.html), [Debugging](https://gjs.guide/extensions/development/debugging.html), [Best practices](https://gjs.guide/extensions/review-guidelines/best-practices.html).
+GNOME Shell extension (`GVitals@NoeimDev`) that polls hardware sensors asynchronously and shows them in the top bar. Runtime is GJS ES modules (Shell 45–51). Official getting-started and practices: [Creating an extension](https://gjs.guide/extensions/development/creating.html), [Anatomy](https://gjs.guide/extensions/overview/anatomy.html), [Imports](https://gjs.guide/extensions/overview/imports-and-modules.html), [Debugging](https://gjs.guide/extensions/development/debugging.html), [Best practices](https://gjs.guide/extensions/review-guidelines/best-practices.html).
 
 ## Layout
 
-The install directory **must match** `metadata.json` `uuid`. User install: `~/.local/share/gnome-shell/extensions/Vitals@CoreCoding.com/`.
+The install directory **must match** `metadata.json` `uuid`. User install: `~/.local/share/gnome-shell/extensions/GVitals@NoeimDev/`.
 
 Required: `metadata.json`, `extension.js`. This repo also uses `prefs.js`, `stylesheet.css`, `schemas/`, `locale/`, helpers, and icons.
 
-Required metadata: `uuid`, `name`, `description`, `shell-version`, `url`. This project also sets `settings-schema`, `gettext-domain`, `version`, and `donations`. Do not invent a `version` bump for EGO; that site owns submission versioning.
+Required metadata: `uuid`, `name`, `description`, `shell-version`, `url`. This project also sets `settings-schema`, `gettext-domain`, and `version`. Do not invent a `version` bump for EGO; that site owns submission versioning.
 
 ## ES modules (GNOME 45+)
 
@@ -46,11 +46,13 @@ Settings: schema id lives in metadata; entry points use `this.getSettings()` wit
 
 GJS caches loaded modules. **Code changes require a new gnome-shell process**, not just disable/enable.
 
-- Wayland: `dbus-run-session gnome-shell --devkit --wayland` (GNOME 49+; needs `mutter-devkit`). GNOME 48 and earlier: `--nested --wayland`. Then `gnome-extensions enable Vitals@CoreCoding.com` inside that session.
+- Wayland: `dbus-run-session gnome-shell --devkit --wayland` (GNOME 49+; needs `mutter-devkit`). GNOME 48 and earlier: `--nested --wayland`. Then `gnome-extensions enable GVitals@NoeimDev` inside that session.
 - X11: Alt+F2 → `restart`, then enable. Wayland sessions cannot restart in-place; log out.
 - Logs: `journalctl -f -o cat /usr/bin/gnome-shell`. Use `console.debug` / `warn` / `error`; keep volume low (journal is system-wide). `SHELL_DEBUG=backtrace-warnings` adds JS stacks. Looking Glass: Alt+F2 → `lg`.
 
-Local clone: compile schemas after schema edits (`glib-compile-schemas --strict schemas/`). See README for develop-branch install.
+Run `./tests/run.sh` for GJS chart range, palette, settings, NVIDIA parser, metadata, and asynchronous filesystem checks. It compiles the local schemas and uses an in-memory settings backend. These tests do not replace a fresh GNOME Shell UI session or real GPU coverage.
+
+Local clone: compile schemas after schema edits (`glib-compile-schemas --strict schemas/`). See README for installation and migration from the old UUID. The retained schema ID intentionally shares saved preferences with Vitals; do not run both extensions together.
 
 ## Code in this repo
 
@@ -59,3 +61,7 @@ Local clone: compile schemas after schema edits (`glib-compile-schemas --strict 
 - GObject subclasses: `GObject.registerClass` + unique `GTypeName`.
 - Icons: `St.Icon` / `Gtk.Image`, not emoji.
 - Line length: stay under ~200 characters (EGO review UI).
+
+## Chart settings
+
+Per-sensor display controls and palette overrides live on each sensor page. `chart-palettes` stores per-key overrides; absent entries inherit the General defaults. Percent charts use their full range, filesystem and GPU memory capacity charts use their respective totals, and other charts use their visible history. Keep unbounded and capacity-dependent values in their original sensor units.

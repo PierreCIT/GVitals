@@ -297,6 +297,7 @@ export const Values = GObject.registerClass({
                 avg = this._legible(sum / vals.length, format, type, avgKey);
                 output.push({
                     label: 'Average',
+                    numeric: sum / vals.length,
                     value: avg.text,
                     style: avg.style,
                     type,
@@ -309,6 +310,7 @@ export const Values = GObject.registerClass({
                 let minFormatted = this._legible(min, format, type, minKey);
                 output.push({
                     label: 'Minimum',
+                    numeric: min,
                     value: minFormatted.text,
                     style: minFormatted.style,
                     type,
@@ -321,6 +323,7 @@ export const Values = GObject.registerClass({
                 let maxFormatted = this._legible(max, format, type, maxKey);
                 output.push({
                     label: 'Maximum',
+                    numeric: max,
                     value: maxFormatted.text,
                     style: maxFormatted.style,
                     type,
@@ -337,6 +340,7 @@ export const Values = GObject.registerClass({
             let boot = this._legible(sum, format, type, bootKey);
             output.push({
                 label: 'Boot ' + direction,
+                numeric: sum,
                 value: boot.text,
                 style: boot.style,
                 type,
@@ -357,6 +361,7 @@ export const Values = GObject.registerClass({
             let session = this._legible(sessionBytes, format, type, sessionKey);
             output.push({
                 label: 'Session ' + direction,
+                numeric: sessionBytes,
                 value: session.text,
                 style: session.style,
                 type,
@@ -371,6 +376,7 @@ export const Values = GObject.registerClass({
 
             output.push({
                 label,
+                numeric: speed,
                 value: speedFormatted.text,
                 style: speedFormatted.style,
                 type,
@@ -395,6 +401,7 @@ export const Values = GObject.registerClass({
                 let device = this._legible(sumNum, 'speed', 'network-' + direction, deviceKey);
                 output.push({
                     label: 'Device ' + direction,
+                    numeric: sumNum,
                     value: device.text,
                     style: device.style,
                     type: 'network-' + direction,

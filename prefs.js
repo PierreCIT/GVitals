@@ -7,6 +7,7 @@ import Gtk from 'gi://Gtk';
 import {ExtensionPreferences, gettext as _} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 import {sensorCatalog, colorPageForSensor} from './helpers/catalog.js';
+import {chartPalette} from './helpers/chartSettings.js';
 import {
     compareColorEntries,
     DEFAULT_THRESHOLD_RGBA,
@@ -17,6 +18,7 @@ import {
     sensorKeyFromTypeLabel,
 } from './helpers/colors.js';
 import * as SensorsModule from './sensors.js';
+import * as ValuesModule from './values.js';
 
 const SENSOR_DISCOVERY_SETTLE_SECONDS = 2;
 
@@ -47,6 +49,22 @@ class Settings {
         // pageName -> sorted list of discovered sensor keys (from Sensors.query).
         this._discoveredSensorsByPage = {};
         this._sensors = null;
+        this._chartSensorRows = {};
+        this._chartPages = {};
+        for (const name of Object.keys(sensorCatalog)) {
+            const page = this.builder.get_object(name + '-page');
+            const group = new Adw.PreferencesGroup({title: _('Values and charts')});
+            const paletteGroup = new Adw.PreferencesGroup({title: _('Individual chart colors')});
+            const paletteList = new Adw.ExpanderRow({title: _('Chart palettes'),
+                subtitle: _('Override the default colors for each chart')});
+            paletteGroup.add(paletteList);
+            page.add(group);
+            page.add(paletteGroup);
+            this._chartPages[name] = {group, paletteList};
+        }
+        this._chartValues = new ValuesModule.Values(this._settings, sensorCatalog);
+        for (const key of new Set([...this._settings.get_strv('disabled-charts'), ...this._settings.get_strv('disabled-values')]))
+            this._add_chart_sensor(key, labelFromSensorKey(key), '', false);
         this._sensorDiscoveryTimeoutId = 0;
         this._bind_sensor_page_gates();
         this._bind_settings();
@@ -85,6 +103,16 @@ class Settings {
         this._sensors = new SensorsModule.Sensors(this._settings, sensorCatalog, _);
         let collect = (label, value, type, format) => {
             this._collect_discovered_sensor(label, type, format);
+            if (!type || type.endsWith('-group') || value === 'disabled' || value === 'destroy') return;
+            const key = sensorKeyFromTypeLabel(type, label);
+            const numeric = format === 'string' ? /^-?\d+(?:\.\d+)?%$/.test(String(value)) :
+                value !== '' && Number.isFinite(Number(value));
+            if (type !== 'network-rx' && type !== 'network-tx')
+                this._add_chart_sensor(key, label, type, numeric);
+            for (const item of this._chartValues.returnIfDifferent(1, label, value, type, format, key)) {
+                if (!item.type.endsWith('-group'))
+                    this._add_chart_sensor(item.key, item.label, item.type, item.numeric !== undefined || numeric);
+            }
         };
 
         // First pass starts hwmon discovery; second pass fills processor deltas.
@@ -100,6 +128,96 @@ class Settings {
                 this._refresh_add_colors_dropdowns();
                 return GLib.SOURCE_REMOVE;
             });
+    }
+
+    _add_chart_sensor(key, label, type, chartSupported) {
+        if (!key) return;
+        const typeName = type || key.replace(/^_+/, '').split('_')[0];
+        const pageName = typeName.startsWith('gpu') ? 'gpu' : typeName.split('-')[0];
+        const page = this._chartPages[pageName];
+        if (!page) return;
+        if (this._chartSensorRows[key]) {
+            const existing = this._chartSensorRows[key];
+            if (type) {
+                existing.row.title = _(label);
+                existing.row.subtitle = type;
+            }
+            if (chartSupported) {
+                existing.chartToggle.sensitive = true;
+                this._add_chart_palette(key, label, page);
+            }
+            return;
+        }
+        const row = new Adw.ActionRow({title: _(label), subtitle: type || key});
+        const controls = new Gtk.Box({orientation: Gtk.Orientation.HORIZONTAL, spacing: 12, valign: Gtk.Align.CENTER});
+        const addToggle = (title, settingsKey, sensitive = true) => {
+            const column = new Gtk.Box({orientation: Gtk.Orientation.VERTICAL, spacing: 3, halign: Gtk.Align.CENTER});
+            const caption = new Gtk.Label({label: _(title)});
+            const toggle = new Gtk.Switch({halign: Gtk.Align.CENTER, sensitive,
+                active: !this._settings.get_strv(settingsKey).includes(key)});
+            toggle.tooltip_text = `${_(label)}: ${_(title)}`;
+            column.append(caption);
+            column.append(toggle);
+            controls.append(column);
+            toggle.connect('notify::active', () => {
+                const disabled = this._settings.get_strv(settingsKey).filter(item => item !== key);
+                if (!toggle.active) disabled.push(key);
+                this._settings.set_strv(settingsKey, disabled);
+            });
+            return toggle;
+        };
+        addToggle('Value', 'disabled-values');
+        const chartToggle = addToggle('Chart', 'disabled-charts', chartSupported);
+        row.add_suffix(controls);
+        this._chartSensorRows[key] = {row, chartToggle};
+        page.group.add(row);
+        if (chartSupported) this._add_chart_palette(key, label, page);
+    }
+
+    _add_chart_palette(key, label, page) {
+        const state = this._chartSensorRows[key];
+        if (!state || state.paletteRow) return;
+        const row = new Adw.ActionRow({title: _(label)});
+        const controls = new Gtk.Box({orientation: Gtk.Orientation.HORIZONTAL, spacing: 6, valign: Gtk.Align.CENTER});
+        const mode = new Gtk.ComboBoxText({valign: Gtk.Align.CENTER});
+        for (const text of ['Use default', 'By sensor', 'Fixed color', 'Gradient', 'Jet', 'Viridis', 'Plasma', 'Inferno'])
+            mode.append_text(_(text));
+        const config = chartPalette(this._settings, key);
+        mode.active = config ? config.mode + 1 : 0;
+        const colors = [];
+        for (const [field, setting] of [['start', 'chart-color-start'], ['end', 'chart-color-end']]) {
+            const rgba = new Gdk.RGBA();
+            if (!rgba.parse(config?.[field] || this._settings.get_string(setting))) rgba.parse('#3584e4');
+            const button = new Gtk.ColorButton({rgba, valign: Gtk.Align.CENTER});
+            button.tooltip_text = field === 'start' ? _('Fixed / low color') : _('High color');
+            controls.append(button);
+            colors.push(button);
+        }
+        controls.prepend(mode);
+        const sync = () => {
+            colors[0].sensitive = mode.active === 2 || mode.active === 3;
+            colors[1].sensitive = mode.active === 3;
+        };
+        const save = () => {
+            const palettes = this._settings.get_value('chart-palettes').deep_unpack();
+            if (mode.active === 0) delete palettes[key];
+            else {
+                const hex = button => {
+                    const color = button.get_rgba();
+                    return '#' + [color.red, color.green, color.blue]
+                        .map(component => Math.round(component * 255).toString(16).padStart(2, '0')).join('');
+                };
+                palettes[key] = JSON.stringify({mode: mode.active - 1, start: hex(colors[0]), end: hex(colors[1])});
+            }
+            this._settings.set_value('chart-palettes', new GLib.Variant('a{ss}', palettes));
+            sync();
+        };
+        mode.connect('changed', save);
+        for (const button of colors) button.connect('color-set', save);
+        sync();
+        row.add_suffix(controls);
+        page.paletteList.add_row(row);
+        state.paletteRow = row;
     }
 
     _collect_discovered_sensor(label, type, format) {
@@ -309,7 +427,7 @@ class Settings {
                         'network-public-ip-show-flag', 'show-battery', 'fixed-widths',
                         'hide-icons', 'menu-centered', 'include-static-info',
                         'include-processor-cores', 'use-processor-cpufreq',
-                        'show-gpu', 'include-static-gpu-info' ];
+                        'show-gpu', 'include-static-gpu-info', 'panel-charts', 'menu-charts', 'show-debug-stats' ];
 
         for (let key in sensors) {
             let sensor = sensors[key];
@@ -333,7 +451,7 @@ class Settings {
         sensors = [
             'position-in-panel', 'unit', 'network-speed-format', 'network-speed-unit',
             'memory-measurement', 'storage-measurement', 'battery-slot', 'icon-style',
-            'network-public-ip-provider'
+            'network-public-ip-provider', 'chart-color-mode'
         ];
         for (let key in sensors) {
             let sensor = sensors[key];
@@ -355,6 +473,21 @@ class Settings {
         updateTime.connect('value-changed', (widget) => {
             this._settings.set_int('update-time', Math.round(widget.get_value()));
         });
+
+        for (const key of ['chart-color-start', 'chart-color-end']) {
+            const button = this.builder.get_object(key);
+            const rgba = new Gdk.RGBA();
+            if (!rgba.parse(this._settings.get_string(key))) rgba.parse('#3584e4');
+            button.set_rgba(rgba);
+            button.connect('color-set', () => {
+                const color = button.get_rgba();
+                this._settings.set_string(key, '#%02x%02x%02x'.format(
+                    Math.round(color.red * 255), Math.round(color.green * 255), Math.round(color.blue * 255)));
+            });
+        }
+
+        this._settings.bind('chart-history-length', this.builder.get_object('chart-history-length'),
+            'value', Gio.SettingsBindFlags.DEFAULT);
 
         this._settings.bind('network-public-ip-interval', this.builder.get_object('network-public-ip-interval'),
             'value', Gio.SettingsBindFlags.DEFAULT);

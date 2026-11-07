@@ -64,6 +64,10 @@ export const MenuItem = GObject.registerClass({
         return this._valueLabel.text;
     }
 
+    set valueVisible(visible) {
+        this._valueLabel.visible = visible;
+    }
+
     set valueStyle(style) {
         this._valueLabel.style = style || null;
     }

@@ -3,6 +3,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
 import St from 'gi://St'
+import Shell from 'gi://Shell';
 
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
@@ -10,6 +11,8 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 
 import * as Sensors from './sensors.js';
+import * as Chart from './chart.js';
+import {chartRange} from './helpers/chartSettings.js';
 
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
@@ -37,6 +40,11 @@ var VitalsMenuButton = GObject.registerClass({
         this._sensorMenuItems = {};
         this._hotLabels = {};
         this._hotItems = {};
+        this._chartHistory = {};
+        this._chartFormats = {};
+        this._chartTotals = {};
+        this._panelCharts = {};
+        this._menuCharts = {};
         this._groups = {};
         this._widths = {};
         this._numGpus = 1;
@@ -81,10 +89,46 @@ var VitalsMenuButton = GObject.registerClass({
                          'fixed-widths', 'hide-icons', 'unit', 'icon-style',
                          'memory-measurement', 'include-public-ip', 'network-public-ip-interval',
                          'network-public-ip-show-flag', 'network-public-ip-provider', 'network-speed-format', 'network-speed-unit', 'storage-measurement',
-                         'include-static-info', 'include-processor-cores', 'include-static-gpu-info' ];
+                         'include-static-info', 'include-processor-cores', 'include-static-gpu-info',
+                         'panel-charts', 'menu-charts', 'chart-history-length' ];
 
         for (let setting of settings)
             this._settings.connectObject('changed::' + setting, this._redrawMenu.bind(this), this);
+
+        this._settings.connectObject('changed::show-debug-stats', () => {
+            this._debugItem.visible = this._settings.get_boolean('show-debug-stats');
+            if (this._debugItem.visible && this.menu.isOpen) this._updateDebugStats(0);
+        }, this);
+
+        this._settings.connectObject('changed::storage-path', () => {
+            delete this._chartTotals._storage_total_;
+            for (const key of Object.keys(this._chartHistory)) {
+                if (key.startsWith('_storage_')) delete this._chartHistory[key];
+            }
+            this._redrawMenu();
+        }, this);
+
+        this._settings.connectObject('changed::disabled-values', () => {
+            const hidden = new Set(this._settings.get_strv('disabled-values'));
+            for (const [key, label] of Object.entries(this._hotLabels))
+                label.visible = !hidden.has(key);
+            for (const [key, row] of Object.entries(this._sensorMenuItems)) {
+                if (row instanceof MenuItem.MenuItem)
+                    row.valueVisible = !hidden.has(key);
+            }
+        }, this);
+
+        this._settings.connectObject('changed::disabled-charts', () => {
+            for (const key of this._settings.get_strv('disabled-charts'))
+                delete this._chartHistory[key];
+            this._redrawMenu();
+        }, this);
+
+        for (let setting of ['chart-color-mode', 'chart-color-start', 'chart-color-end', 'chart-palettes'])
+            this._settings.connectObject('changed::' + setting, () => {
+                for (const chart of [...Object.values(this._panelCharts), ...Object.values(this._menuCharts)])
+                    chart.queue_repaint();
+            }, this);
 
         for (let setting of SensorCatalog.colorSettingsKeys())
             this._settings.connectObject('changed::' + setting, this._thresholdColorsChanged.bind(this), this);
@@ -112,6 +156,11 @@ var VitalsMenuButton = GObject.registerClass({
 
         for (let i = 1; i <= this._numGpus; i++)
             this._initializeMenuGroup('gpu#' + i, 'gpu', (this._numGpus > 1 ? ' ' + i : ''));
+
+        this._debugItem = new PopupMenu.PopupMenuItem('', {reactive: false});
+        this._debugItem.label.clutter_text.line_wrap = true;
+        this._debugItem.visible = this._settings.get_boolean('show-debug-stats');
+        this.menu.addMenuItem(this._debugItem);
 
         // add separator
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
@@ -150,7 +199,7 @@ var VitalsMenuButton = GObject.registerClass({
         let monitorButton = this._createRoundButton('org.gnome.SystemMonitor-symbolic', _('System Monitor'));
         monitorButton.connect('clicked', (self) => {
             this.menu._getTopMenu().close();
-            Util.spawn(this._settings.get_string('monitor-cmd').split(" "));
+            this._launchSystemMonitor();
         });
         customButtonBox.add_child(monitorButton);
 
@@ -178,6 +227,52 @@ var VitalsMenuButton = GObject.registerClass({
                 this._querySensors();
             }
         }, this);
+    }
+
+    _launchSystemMonitor() {
+        const command = this._settings.get_string('monitor-cmd').trim();
+        if (command && command !== 'gnome-system-monitor') {
+            try {
+                const [, argv] = GLib.shell_parse_argv(command);
+                Util.spawn(argv);
+            } catch (error) {
+                console.error(`GVitals: invalid monitor command: ${error.message}`);
+            }
+            return;
+        }
+        // Desktop entries also work for sandboxed installations such as Flatpak.
+        for (const id of ['net.nokyan.Resources.desktop', 'org.gnome.Resources.desktop',
+            'org.gnome.SystemMonitor.desktop', 'gnome-system-monitor.desktop']) {
+            const app = Shell.AppSystem.get_default().lookup_app(id);
+            if (!app) continue;
+            try {
+                app.open_new_window(-1);
+                return;
+            } catch (error) {
+                console.warn(`GVitals: could not launch ${id}: ${error.message}`);
+            }
+        }
+        const executable = GLib.find_program_in_path('resources') || GLib.find_program_in_path('gnome-system-monitor');
+        if (executable) Util.spawn([executable]);
+        else console.warn('GVitals: no system monitor found; configure Monitor command in preferences');
+    }
+
+    _updateDebugStats(dispatchMs) {
+        if (!this._settings.get_boolean('show-debug-stats') || !this.menu.isOpen) return;
+        const samples = Object.values(this._chartHistory).reduce((sum, history) => sum + history.length, 0);
+        const file = Gio.File.new_for_path('/proc/self/status');
+        file.load_contents_async(null, (source, result) => {
+            if (this._destroyed || !this._settings.get_boolean('show-debug-stats')) return;
+            try {
+                const [, contents] = source.load_contents_finish(result);
+                const match = new TextDecoder().decode(contents).match(/^VmRSS:\s+(\d+)\s+kB/m);
+                const memory = match ? `${(Number(match[1]) / 1024).toFixed(1)} MiB` : _('unavailable');
+                this._debugItem.label.text = _('GNOME Shell memory: %s\nGVitals poll dispatch: %s ms · Chart samples: %d')
+                    .format(memory, dispatchMs.toFixed(2), samples);
+            } catch (error) {
+                console.warn(`GVitals: cannot read Shell memory: ${error.message}`);
+            }
+        });
     }
 
     _initializeMenuGroup(groupName, optionName, menuSuffix = '', position = -1) {
@@ -283,9 +378,14 @@ var VitalsMenuButton = GObject.registerClass({
         this._hotLabels[key] = label;
         // prevent "called on the widget"  "which is not in the stage" errors by adding before width below
         item.add_child(label);
+        label.visible = !this._settings.get_strv('disabled-values').includes(key);
 
         // support for fixed widths #55, save label (text) width
         this._widths[key] = label.get_clutter_text().width;
+        if (this._settings.get_boolean('panel-charts') && this._chartEnabled(key) && this._chartHistory[key]) {
+            this._panelCharts[key] = this._makeChart(key, true);
+            item.add_child(this._panelCharts[key]);
+        }
     }
 
     _showHideSensorsChanged(self, sensor) {
@@ -323,6 +423,7 @@ var VitalsMenuButton = GObject.registerClass({
 
     _removeHotItem(key) {
         if (key in this._hotItems) {
+            delete this._panelCharts[key];
             delete this._hotLabels[key];
             delete this._widths[key];
             this._hotItems[key].destroy();
@@ -342,6 +443,7 @@ var VitalsMenuButton = GObject.registerClass({
             if (key.includes('-group')) continue;
             let item = this._sensorMenuItems[key];
             delete this._sensorMenuItems[key];
+            delete this._menuCharts[key];
             item.destroy();
         }
 
@@ -372,6 +474,39 @@ var VitalsMenuButton = GObject.registerClass({
             GLib.Source.remove(this._refreshTimeoutId);
             this._refreshTimeoutId = null;
         }
+    }
+
+    _makeChart(key, panel) {
+        return Chart.createChart(this._chartHistory[key], () => this._settings.get_int('chart-history-length'),
+            this._settings, key, values => chartRange(key, this._chartFormats[key], values, this._chartTotals), panel);
+    }
+
+    _chartEnabled(key) {
+        return !this._settings.get_strv('disabled-charts').includes(key);
+    }
+
+    _recordChart(key, value, format = null) {
+        if (!this._chartEnabled(key)) return;
+        let number = typeof value === 'number' ? value :
+            (typeof value === 'string' && /^-?\d+(?:\.\d+)?%$/.test(value) ? parseFloat(value) : NaN);
+        if (!Number.isFinite(number)) return;
+        if (format) this._chartFormats[key] = format === 'string' && typeof value === 'string' && value.endsWith('%')
+            ? 'percentage-string' : format;
+        const samples = this._chartHistory[key] ??= [];
+        samples.push(number);
+        const length = this._settings.get_int('chart-history-length');
+        if (samples.length > length) samples.splice(0, samples.length - length);
+        if (this._settings.get_boolean('panel-charts') && this._hotItems[key] && !this._panelCharts[key]) {
+            this._panelCharts[key] = this._makeChart(key, true);
+            this._hotItems[key].add_child(this._panelCharts[key]);
+        }
+        const row = this._sensorMenuItems[key];
+        if (this._settings.get_boolean('menu-charts') && row && !this._menuCharts[key]) {
+            this._menuCharts[key] = this._makeChart(key, false);
+            row.add_child(this._menuCharts[key]);
+        }
+        this._panelCharts[key]?.queue_repaint();
+        this._menuCharts[key]?.queue_repaint();
     }
 
     _updateDisplay(label, value, type, key, style) {
@@ -422,6 +557,7 @@ var VitalsMenuButton = GObject.registerClass({
         let gicon = Gio.icon_new_for_string(this._sensorIconPath(type, icon, key));
 
         let item = new MenuItem.MenuItem(gicon, key, sensor.label, sensor.value, this._hotLabels[key]);
+        item.valueVisible = !this._settings.get_strv('disabled-values').includes(key);
         item.connect('toggle', (self) => {
             let hotSensors = this._settings.get_strv('hot-sensors');
 
@@ -562,6 +698,7 @@ var VitalsMenuButton = GObject.registerClass({
     }
 
     _querySensors() {
+        const dispatchStart = GLib.get_monotonic_time();
         // figure out last run time
         let now = new Date().getTime();
         let dwell = (now - this._last_query) / 1000;
@@ -569,7 +706,7 @@ var VitalsMenuButton = GObject.registerClass({
 
         // panel labels only when closed — `_default_icon_` is in _hotItems, not _hotLabels
         // empty set still queries so dwell-based sensors keep warm baselines
-        let wantedKeys = this.menu.isOpen ? null : new Set(Object.keys(this._hotLabels));
+        let wantedKeys = this.menu.isOpen || this._settings.get_boolean('menu-charts') ? null : new Set(Object.keys(this._hotLabels));
 
         this._sensors.query((label, value, type, format) => {
             // async reads can resolve after disable(); the panel widgets are gone by then
@@ -587,6 +724,8 @@ var VitalsMenuButton = GObject.registerClass({
                     delete this._sensorMenuItems[key];
                 }
                 this._removeHotItem(key);
+                delete this._menuCharts[key];
+                delete this._chartHistory[key];
 
                 // an empty panel box leaves no way to open the menu
                 if (Object.keys(this._hotItems).length == 0)
@@ -609,14 +748,6 @@ var VitalsMenuButton = GObject.registerClass({
             if (typeKey.startsWith('gpu') && typeKey !== 'gpu#1') {
                 const split = typeKey.split('#');
                 if(split.length == 2 && this._numGpus < parseInt(split[1])) {
-                    // occasionally two lines from nvidia-smi will be read at once
-                    // so we only actually update the number of gpus if we have recieved multiple lines at least 3 times in a row
-                    // i.e. we make sure that mutiple queries have detected a new gpu back-to-back
-                    if(this._newGpuDetectedCount < 2) {
-                        this._newGpuDetected = true;
-                        return;
-                    }
-
                     this._numGpus = parseInt(split[1]);
                     this._newGpuDetectedCount = 0;
                     this._newGpuDetected = false;
@@ -628,6 +759,11 @@ var VitalsMenuButton = GObject.registerClass({
                 }
             }
 
+            if (key === '_storage_total_' || /^_gpu#\d+_memory_total_$/.test(key))
+                this._chartTotals[key] = Number(value);
+            if (!type.includes('-group') && type !== 'network-rx' && type !== 'network-tx' &&
+                (this._settings.get_boolean('menu-charts') || this._settings.get_boolean('panel-charts') && this._hotItems[key]))
+                this._recordChart(key, format !== 'string' && typeof value === 'string' ? Number(value) : value, format);
             let items = this._values.returnIfDifferent(dwell, label, value, type, format, key);
             for (let item of items) {
                 if (item.type.startsWith('network-') && item.type.length == 10 && item.type != 'network-rx' && item.type != 'network-tx') {
@@ -646,8 +782,20 @@ var VitalsMenuButton = GObject.registerClass({
                 }
 
                 this._updateDisplay(_(item.label), item.value, item.type, item.key, item.style);
+                if (item.numeric !== undefined && (this._settings.get_boolean('menu-charts') ||
+                    this._settings.get_boolean('panel-charts') && this._hotItems[item.key]))
+                    this._recordChart(item.key, item.numeric);
+                else if (this._chartHistory[item.key] && this._chartEnabled(item.key) && this._settings.get_boolean('menu-charts') && !this._menuCharts[item.key]) {
+                    const row = this._sensorMenuItems[item.key];
+                    if (row && !item.type.includes('-group')) {
+                        this._menuCharts[item.key] = this._makeChart(item.key, false);
+                        row.add_child(this._menuCharts[item.key]);
+                    }
+                }
             }
         }, dwell, wantedKeys);
+
+        this._updateDebugStats((GLib.get_monotonic_time() - dispatchStart) / 1000);
 
         //if a new gpu has been detected during the last query, then increment the amount of times we've detected a new gpu
         if(this._newGpuDetected) this._newGpuDetectedCount++;

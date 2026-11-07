@@ -6,6 +6,16 @@
       <summary>Sensors to show in panel</summary>
       <description>List of sensors to be shown in the panel</description>
     </key>
+    <key type="b" name="panel-charts"><default>false</default><summary>Show charts in the top bar</summary></key>
+    <key type="b" name="menu-charts"><default>false</default><summary>Show charts in the menu</summary></key>
+    <key name="disabled-values" type="as"><default>[]</default><summary>Sensors whose values are hidden</summary></key>
+    <key name="disabled-charts" type="as"><default>[]</default><summary>Sensors whose charts are hidden</summary></key>
+    <key name="chart-palettes" type="a{ss}"><default>{}</default><summary>Individual chart palettes</summary></key>
+    <key name="chart-color-mode" type="i"><default>0</default><range min="0" max="6"/><summary>Chart color mode</summary></key>
+    <key name="chart-color-start" type="s"><default>'#3584e4'</default><summary>Chart fixed or low value color</summary></key>
+    <key name="chart-color-end" type="s"><default>'#e01b24'</default><summary>Chart high value color</summary></key>
+    <key name="show-debug-stats" type="b"><default>false</default><summary>Show GVitals debug statistics</summary></key>
+    <key type="i" name="chart-history-length"><default>60</default><range min="2" max="600"/><summary>Chart history length in samples</summary></key>
     <key type="i" name="update-time">
       <default>5</default>
       <summary>Seconds between updates</summary>
@@ -148,7 +158,7 @@
     <key type="s" name="monitor-cmd">
       <default>"gnome-system-monitor"</default>
       <summary>System Monitor command</summary>
-      <description>The command run when system monitor button is clicked</description>
+      <description>Custom monitor command; the default automatically selects an installed monitor</description>
     </key>
     <key type="b" name="include-static-info">
       <default>false</default>
@@ -168,7 +178,7 @@
     <key type="b" name="show-gpu">
       <default>false</default>
       <summary>Monitor GPU</summary>
-      <description>Display GPU information (requires the nvidia-smi tool)</description>
+      <description>Display available GPU information (NVIDIA requires nvidia-smi)</description>
     </key>
     <key type="b" name="include-static-gpu-info">
       <default>false</default>

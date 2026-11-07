@@ -30,14 +30,6 @@ import GObject from 'gi://GObject';
 import * as SubProcessModule from './helpers/subprocess.js';
 import * as FileModule from './helpers/file.js';
 
-let GTop, hasGTop = true;
-try {
-    ({default: GTop} = await import('gi://GTop'));
-} catch (err) {
-    log(err);
-    hasGTop = false;
-};
-
 export const Sensors = GObject.registerClass({
     GTypeName: 'Sensors',
 }, class Sensors extends GObject.Object {
@@ -51,7 +43,10 @@ export const Sensors = GObject.registerClass({
         this._last_processor = { 'core': {}, 'speed': [] };
 
         this._settingChangedSignals = [];
-        this._addSettingChangedSignal('show-gpu', this._reconfigureNvidiaSmiProcess.bind(this));
+        this._addSettingChangedSignal('show-gpu', () => {
+            this._reconfigureNvidiaSmiProcess();
+            this._discoverGpuDrm();
+        });
         this._addSettingChangedSignal('update-time', this._reconfigureNvidiaSmiProcess.bind(this));
         this._addSettingChangedSignal('network-public-ip-interval', () => {this._next_public_ip_check = 0;});
         this._addSettingChangedSignal('network-public-ip-provider', () => {this._next_public_ip_check = 0;});
@@ -59,7 +54,9 @@ export const Sensors = GObject.registerClass({
 
         this._gpu_drm_vendors = null;
         this._gpu_drm_indices = null;
+        this._gpu_temperature_paths = {};
         this._nvidia_smi_process = null;
+        this._nvidia_basic_query = false;
         this._nvidia_gpu_count = 1;
         this._nvidia_labels = [];
         this._bad_split_count = 0;
@@ -70,14 +67,16 @@ export const Sensors = GObject.registerClass({
         this._frameMonitorAccTime = 0;
         this._frameMonitorCurrentHz = 0;
 
-        if (hasGTop) {
-            this.storage = new GTop.glibtop_fsusage();
+        this._storageDevice = '';
+        this._lastRead = 0;
+        this._lastWrite = 0;
+        this._findStorageDevice();
+        this._addSettingChangedSignal('storage-path', () => {
             this._storageDevice = '';
-            this._findStorageDevice();
-
             this._lastRead = 0;
             this._lastWrite = 0;
-        }
+            this._findStorageDevice();
+        });
     }
 
     _addSettingChangedSignal(key, callback) {
@@ -115,15 +114,20 @@ export const Sensors = GObject.registerClass({
     }
 
     _findStorageDevice() {
-        new FileModule.File('/proc/mounts').read("\n").then(lines => {
-            for (let line of lines) {
-                let loadArray = line.trim().split(/\s+/);
-                if (loadArray[1] == this._settings.get_string('storage-path')) {
-                    this._storageDevice = loadArray[0];
-                    break;
+        const path = GLib.canonicalize_filename(this._settings.get_string('storage-path'), null);
+        new FileModule.File('/proc/self/mountinfo').read("\n").then(lines => {
+            if (path !== GLib.canonicalize_filename(this._settings.get_string('storage-path'), null)) return;
+            let best = '';
+            for (const line of lines) {
+                const fields = line.split(' ');
+                if (fields.length < 6) continue;
+                const mount = fields[4].replace(/\\([0-7]{3})/g, (_, octal) => String.fromCharCode(parseInt(octal, 8)));
+                if ((path === mount || path.startsWith(mount === '/' ? '/' : mount + '/')) && mount.length > best.length) {
+                    best = mount;
+                    this._storageDevice = fields[2];
                 }
             }
-        }).catch(err => { });
+        }).catch(() => {});
     }
 
     query(callback, dwell, wantedKeys) {
@@ -396,7 +400,7 @@ export const Sensors = GObject.registerClass({
         new FileModule.File('/proc/diskstats').read("\n").then(lines => {
             for (let line of lines) {
                 let loadArray = line.trim().split(/\s+/);
-                if ('/dev/' + loadArray[2] == this._storageDevice) {
+                if (loadArray[0] + ':' + loadArray[1] == this._storageDevice) {
                     var read = (loadArray[5] * 512);
                     var write = (loadArray[9] * 512);
                     this._returnValue(callback, 'Read total', read, 'storage', 'storage');
@@ -413,30 +417,26 @@ export const Sensors = GObject.registerClass({
             }
         }).catch(err => { });
 
-        // skip rest of stats if gtop not available
-        if (!hasGTop) return;
-
-        GTop.glibtop_get_fsusage(this.storage, this._settings.get_string('storage-path'));
-
-        let total = this.storage.blocks * this.storage.block_size;
-        let avail = this.storage.bavail * this.storage.block_size;
-        let free = this.storage.bfree * this.storage.block_size;
-        let used = total - free;
-        let reserved = (total - avail) - used;
-        let freePercent = 0;
-        let usedPercent = 0;
-        if (total > 0) {
-          freePercent = Math.round((free / total) * 100);
-          usedPercent = Math.round((used / total) * 100);
-        }
-
-        this._returnValue(callback, 'Total', total, 'storage', 'storage');
-        this._returnValue(callback, 'Used', used, 'storage', 'storage');
-        this._returnValue(callback, 'Reserved', reserved, 'storage', 'storage');
-        this._returnValue(callback, 'Free', avail, 'storage', 'storage');
-        this._returnValue(callback, 'Used %', usedPercent + '%', 'storage', 'string');
-        this._returnValue(callback, 'Free %', freePercent + '%', 'storage', 'string');
-        this._returnValue(callback, 'storage', avail, 'storage-group', 'storage');
+        const path = this._settings.get_string('storage-path');
+        Gio.File.new_for_path(path).query_filesystem_info_async(
+            'filesystem::size,filesystem::free,filesystem::used', GLib.PRIORITY_DEFAULT, null, (file, result) => {
+                try {
+                    const info = file.query_filesystem_info_finish(result);
+                    if (path !== this._settings.get_string('storage-path') ||
+                        !info.has_attribute('filesystem::size') || !info.has_attribute('filesystem::free')) return;
+                    const total = info.get_attribute_uint64('filesystem::size');
+                    const free = info.get_attribute_uint64('filesystem::free');
+                    const used = info.has_attribute('filesystem::used') ? info.get_attribute_uint64('filesystem::used') : total - free;
+                    this._returnValue(callback, 'Total', total, 'storage', 'storage');
+                    this._returnValue(callback, 'Used', used, 'storage', 'storage');
+                    this._returnValue(callback, 'Free', free, 'storage', 'storage');
+                    this._returnValue(callback, 'Used %', (total ? Math.round(used / total * 100) : 0) + '%', 'storage', 'string');
+                    this._returnValue(callback, 'Free %', (total ? Math.round(free / total * 100) : 0) + '%', 'storage', 'string');
+                    this._returnValue(callback, 'storage', free, 'storage-group', 'storage');
+                } catch (err) {
+                    console.warn(`Vitals: cannot read filesystem usage for ${path}: ${err.message}`);
+                }
+            });
     }
 
     _queryBattery(callback) {
@@ -632,6 +632,9 @@ export const Sensors = GObject.registerClass({
         if (this._frameMonitorCurrentHz > 0)
             this._returnValue(callback, 'Refresh Rate', this._frameMonitorCurrentHz, 'gpu#1', 'hertz');
 
+        if (this._nvidia_smi_process && this._gpu_drm_indices?.length)
+            this._readGpuDrm(callback, true);
+
         if (!this._nvidia_smi_process) {
             // no nvidia-smi, so we use sysfs DRM if any cards was discovered
             if (!this._gpu_drm_indices?.length) {
@@ -644,8 +647,20 @@ export const Sensors = GObject.registerClass({
             return;
         }
 
-        this._nvidia_smi_process.read('\n').then(lines => {
-            const expectedSplitLength = 19;
+        const process = this._nvidia_smi_process;
+        process.read('\n').then(lines => {
+            if (this._nvidia_smi_process !== process || lines === null) return;
+            if (!lines.length) {
+                this._terminateNvidiaSmiProcess();
+                if (!this._nvidia_basic_query) {
+                    this._nvidia_basic_query = true;
+                    this._reconfigureNvidiaSmiProcess();
+                } else {
+                    this._readGpuDrm(callback);
+                }
+                return;
+            }
+            const expectedSplitLength = this._nvidia_basic_query ? 5 : 19;
             let valid = lines.filter(line => line.trim() &&
                 line.split(',').length >= expectedSplitLength);
 
@@ -662,19 +677,21 @@ export const Sensors = GObject.registerClass({
             // if we've already updated the static info during the last parse, then stop doing so.
             // this is so the _parseNvidiaSmiLine function won't return static info anymore
             // and the nvidia-smi commmand won't be queried for static info either
-            if(!this._nvidia_static_returned) {
+            if (valid.length > 0 && !this._nvidia_static_returned) {
                 this._nvidia_static_returned = true;
                 //reconfigure the process to stop querying static info
                 this._reconfigureNvidiaSmiProcess();
             }
         }).catch(err => {
+            if (this._nvidia_smi_process !== process) return;
             this._disableGpuLabels(callback);
             this._terminateNvidiaSmiProcess();
+            this._readGpuDrm(callback);
         });
     }
 
     _parseNvidiaSmiLine(callback, csv, gpuNum, multiGpu) {
-        const expectedSplitLength = 19;
+        const expectedSplitLength = this._nvidia_basic_query ? 5 : 19;
         let csv_split = csv.split(',');
 
         // occasionally the nvidia-smi command can get cut off before it can be fully read, thus the parse function only gets part of a line
@@ -689,6 +706,22 @@ export const Sensors = GObject.registerClass({
             return;
         }
         this._bad_split_count = 0;
+        if (this._nvidia_basic_query) {
+            const [name, temperature, total, used, utilization] = csv_split;
+            const type = 'gpu#' + gpuNum;
+            const unit = this._settings.get_int('memory-measurement') ? 1000 : 1024;
+            const usage = parseFloat(utilization) / 100;
+            this._returnGpuGroupHeader(callback, type, usage);
+            if (this._settings.get_boolean('include-static-gpu-info'))
+                this._returnGpuValue(callback, 'Vendor', name.trim(), type, 'string');
+            this._returnGpuValue(callback, 'Temperature', parseFloat(temperature) * 1000, type, 'temp');
+            this._returnGpuValue(callback, 'Utilization', usage, type, 'percent');
+            this._returnGpuValue(callback, 'Memory Used', parseFloat(used) * 1024 * 1024 / unit, type, 'memory');
+            this._returnGpuValue(callback, 'Memory Total', parseFloat(total) * 1024 * 1024 / unit, type, 'memory');
+            if (parseFloat(total) > 0)
+                this._returnGpuValue(callback, 'Memory Usage', parseFloat(used) / parseFloat(total), type, 'percent');
+            return;
+        }
 
         let [
             label,
@@ -735,11 +768,12 @@ export const Sensors = GObject.registerClass({
         this._returnGpuValue(callback, 'Memory Temperature', parseInt(temp_mem) * 1000, typeName, 'temp', memTempValid);
         this._returnStaticGpuValue(callback, 'Temperature Limit', parseInt(staticInfo['temp_limit']) * 1000, typeName, 'temp');
 
+        const memoryUnit = this._settings.get_int('memory-measurement') ? 1000 : 1024;
         this._returnGpuValue(callback, 'Memory Usage', parseInt(mem_used) / parseInt(mem_total), typeName, 'percent');
-        this._returnGpuValue(callback, 'Memory Total', parseInt(mem_total) * 1000, typeName, 'memory');
-        this._returnGpuValue(callback, 'Memory Used', parseInt(mem_used) * 1000, typeName, 'memory');
-        this._returnGpuValue(callback, 'Memory Reserved', parseInt(mem_reserved) * 1000, typeName, 'memory');
-        this._returnGpuValue(callback, 'Memory Free', parseInt(mem_free) * 1000, typeName, 'memory');
+        this._returnGpuValue(callback, 'Memory Total', parseInt(mem_total) * 1024 * 1024 / memoryUnit, typeName, 'memory');
+        this._returnGpuValue(callback, 'Memory Used', parseInt(mem_used) * 1024 * 1024 / memoryUnit, typeName, 'memory');
+        this._returnGpuValue(callback, 'Memory Reserved', parseInt(mem_reserved) * 1024 * 1024 / memoryUnit, typeName, 'memory');
+        this._returnGpuValue(callback, 'Memory Free', parseInt(mem_free) * 1024 * 1024 / memoryUnit, typeName, 'memory');
 
         this._returnGpuValue(callback, 'Memory Utilization', parseInt(util_mem) * 0.01, typeName, 'percent');
         this._returnGpuValue(callback, 'Utilization', parseInt(util_gpu) * 0.01, typeName, 'percent');
@@ -772,44 +806,52 @@ export const Sensors = GObject.registerClass({
         this._returnStaticGpuValue(callback, 'Sub Device ID', staticInfo['sub_device_id'], typeName, 'string');
     }
 
-    _readGpuDrm(callback) {
+    _readGpuDrm(callback, skipNvidia = false) {
         const unit = this._settings.get_int('memory-measurement') ? 1000 : 1024;
-        for (let z = 0; z < this._gpu_drm_indices.length; z++) {
-            let i = this._gpu_drm_indices[z];
-            const typeName = 'gpu#' + (z + 1);
-            const vendor = (this._gpu_drm_vendors[z] || '').toLowerCase();
+        let ordinal = skipNvidia ? this._nvidia_gpu_count : 0;
+        for (let z = 0; z < (this._gpu_drm_indices?.length || 0); z++) {
+            const i = this._gpu_drm_indices[z];
+            const vendor = (this._gpu_drm_vendors[z] || '').trim().toLowerCase();
+            if (skipNvidia && vendor === '0x10de') continue;
+            const typeName = 'gpu#' + (++ordinal);
             const cardBase = '/sys/class/drm/card' + i + '/device/';
-
             this._returnGpuGroupHeader(callback, typeName, null);
+            const names = {'0x1002': 'AMD', '0x10de': 'NVIDIA', '0x8086': 'Intel',
+                '0x13b5': 'ARM', '0x5143': 'Qualcomm', '0x1234': 'QEMU'};
+            if (this._settings.get_boolean('include-static-gpu-info') && names[vendor])
+                this._returnGpuValue(callback, 'Vendor', names[vendor], typeName, 'string');
 
-            if (this._settings.get_boolean('include-static-gpu-info')) {
-                let vendorName = null;
-                switch (vendor) {
-                    case '0x1002': vendorName = 'AMD'; break;
-                    case '0x10de': vendorName = 'NVIDIA'; break;
-                    case '0x13b5': vendorName = 'ARM'; break;
-                    case '0x5143': vendorName = 'Qualcomm'; break;
-                    case '0x8086': vendorName = 'Intel'; break;
-                    case '0x1234': vendorName = 'QEMU'; break;
-                }
-                if (vendorName)
-                    this._returnGpuValue(callback, 'Vendor', vendorName, typeName, 'string');
-            }
+            // These files are available on AMD and on any other driver exposing the same ABI.
+            new FileModule.File(cardBase + 'gpu_busy_percent').read().then(value => {
+                const usage = Number(value) / 100;
+                this._returnGpuGroupHeader(callback, typeName, usage);
+                this._returnGpuValue(callback, 'Utilization', usage, typeName, 'percent');
+            }).catch(() => {});
+            Promise.all([
+                new FileModule.File(cardBase + 'mem_info_vram_used').read(),
+                new FileModule.File(cardBase + 'mem_info_vram_total').read(),
+            ]).then(([usedText, totalText]) => {
+                const used = Number(usedText), total = Number(totalText);
+                if (!Number.isFinite(used) || !Number.isFinite(total)) return;
+                this._returnGpuValue(callback, 'Memory Used', used / unit, typeName, 'memory');
+                this._returnGpuValue(callback, 'Memory Total', total / unit, typeName, 'memory');
+                if (total > 0) this._returnGpuValue(callback, 'Memory Usage', used / total, typeName, 'percent');
+            }).catch(() => {});
 
-            if (vendor === '0x1002') {
-                new FileModule.File(cardBase + 'gpu_busy_percent').read().then(value => {
-                    let usage = parseInt(value) * 0.01;
-                    this._returnGpuGroupHeader(callback, typeName, usage);
-                    this._returnGpuValue(callback, 'Usage', usage, typeName, 'percent');
-                }).catch(err => {
-                    this._returnGpuGroupHeader(callback, typeName, null);
-                });
-                new FileModule.File(cardBase + 'mem_info_vram_used').read().then(value => {
-                    this._returnGpuValue(callback, 'Memory Used', parseInt(value) / unit, typeName, 'memory');
-                }).catch(err => { });
-                new FileModule.File(cardBase + 'mem_info_vram_total').read().then(value => {
-                    this._returnGpuValue(callback, 'Memory Total', parseInt(value) / unit, typeName, 'memory');
-                }).catch(err => { });
+            // Resolve hwmon once per card; temperature is already in millidegrees Celsius.
+            const readTemperature = path => new FileModule.File(path).read().then(value => {
+                this._returnGpuValue(callback, 'Temperature', Number(value), typeName, 'temp');
+            }).catch(() => {});
+            if (this._gpu_temperature_paths[i]) {
+                readTemperature(this._gpu_temperature_paths[i]);
+            } else {
+                new FileModule.File(cardBase + 'hwmon').list().then(names => {
+                    const name = names.filter(entry => /^hwmon\d+$/.test(entry)).sort()[0];
+                    if (!name) return;
+                    const path = cardBase + 'hwmon/' + name + '/temp1_input';
+                    this._gpu_temperature_paths[i] = path;
+                    readTemperature(path);
+                }).catch(() => {});
             }
         }
     }
@@ -994,21 +1036,24 @@ export const Sensors = GObject.registerClass({
     }
 
     _discoverGpuDrm() {
-        // use DRM only if nvidia-smi is not used
-        if (this._settings.get_boolean('show-gpu') && this._nvidia_smi_process == null) {
+        if (!this._settings.get_boolean('show-gpu')) {
             this._gpu_drm_indices = [];
             this._gpu_drm_vendors = [];
-            // try to discover up to 10 cards starting from index 0
-            for(let i = 0; i < 10 ; i++){
-                new FileModule.File('/sys/class/drm/card'+i+'/device/vendor').read().then(value => {
-                    this._gpu_drm_indices.push(i);
-                    this._gpu_drm_vendors.push(value);
-                }).catch(err => { });
-            }
-        } else {
-            this._gpu_drm_vendors = null;
-            this._gpu_drm_indices = null;
+            return;
         }
+        new FileModule.File('/sys/class/drm').list().then(names => {
+            const indices = names.filter(name => /^card\d+$/.test(name))
+                .map(name => Number(name.slice(4))).sort((a, b) => a - b);
+            return Promise.all(indices.map(index =>
+                new FileModule.File(`/sys/class/drm/card${index}/device/vendor`).read()
+                    .then(vendor => ({index, vendor})).catch(() => null)));
+        }).then(cards => {
+            if (!this._settings.get_boolean('show-gpu')) return;
+            cards = cards.filter(Boolean);
+            this._gpu_drm_indices = cards.map(card => card.index);
+            this._gpu_drm_vendors = cards.map(card => card.vendor);
+            this._gpu_temperature_paths = {};
+        }).catch(() => {});
     }
 
     // The nvidia-smi subprocess will keep running and print new sensor data to stdout every
@@ -1039,6 +1084,7 @@ export const Sensors = GObject.registerClass({
                 let query_interval = Math.max(update_time, 1);
                 let command = [
                     'nvidia-smi',
+                    this._nvidia_basic_query ? '--query-gpu=name,temperature.gpu,memory.total,memory.used,utilization.gpu' :
                     '--query-gpu=name,' +
                     'fan.speed,' +
                     'temperature.gpu,temperature.memory,' +

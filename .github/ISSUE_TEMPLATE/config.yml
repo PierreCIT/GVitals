@@ -1,5 +1,5 @@
-blank_issues_enabled: false
+blank_issues_enabled: true
 contact_links:
-  - name: Wiki
-    url: https://github.com/corecoding/Vitals/wiki/
-    about: Please read this page before submitting a feature request or bug report!
+  - name: GVitals repository
+    url: https://github.com/PierreCIT/GVitals
+    about: Read the project documentation before submitting an issue.

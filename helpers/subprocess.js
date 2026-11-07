@@ -30,8 +30,7 @@ SubProcess.prototype.read = function(delimiter = '') {
                 if (e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.PENDING)) {
                     // previous read attempt is still waiting for something from stdout
                     // ignore second attempt, return empty data (like EOF)
-                    if (delimiter) resolve([]);
-                    else resolve('');
+                    resolve(null);
                 } else {
                     reject(e.message);
                 }

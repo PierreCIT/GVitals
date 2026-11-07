@@ -1,15 +1,18 @@
 {
-  "description": "A glimpse into your computer's temperature, voltage, fan speed, memory usage, processor load, system resources, network speed and storage stats. This is a one stop shop to monitor all of your vital sensors. Uses asynchronous polling to provide a smooth user experience. Feature requests or bugs? Please use GitHub.",
+  "description": "GVitals by NoeimDev monitors system sensors asynchronously and displays their values and history in the GNOME Shell panel.",
   "gettext-domain": "vitals",
-  "name": "Vitals",
+  "name": "GVitals",
   "settings-schema": "org.gnome.shell.extensions.vitals",
   "shell-version": [
-    "45", "46", "47", "48", "49", "50", "51"
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "51"
   ],
-  "url": "https://github.com/corecoding/Vitals",
-  "uuid": "Vitals@CoreCoding.com",
-  "version": 86,
-  "donations": {
-      "paypal": "corecoding"
-  }
+  "url": "https://github.com/PierreCIT/GVitals",
+  "uuid": "GVitals@NoeimDev",
+  "version": 86
 }
