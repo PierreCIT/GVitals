@@ -8,6 +8,9 @@
     </key>
     <key type="b" name="panel-charts"><default>false</default><summary>Show charts in the top bar</summary></key>
     <key type="b" name="menu-charts"><default>false</default><summary>Show charts in the menu</summary></key>
+    <key name="value-font-size" type="i"><default>0</default><range min="0" max="48"/>
+      <summary>Value font size in pixels</summary><description>Zero follows the GNOME Shell theme.</description>
+    </key>
     <key name="disabled-values" type="as"><default>[]</default><summary>Sensors whose values are hidden</summary></key>
     <key name="disabled-charts" type="as"><default>[]</default><summary>Sensors whose charts are hidden</summary></key>
     <key name="chart-palettes" type="a{ss}"><default>{}</default><summary>Individual chart palettes</summary></key>

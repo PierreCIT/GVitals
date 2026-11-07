@@ -493,6 +493,9 @@ export class Settings {
             });
         }
 
+        this._settings.bind('value-font-size', this.builder.get_object('value-font-size'),
+            'value', Gio.SettingsBindFlags.DEFAULT);
+
         this._settings.bind('chart-history-length', this.builder.get_object('chart-history-length'),
             'value', Gio.SettingsBindFlags.DEFAULT);
 

@@ -46,6 +46,7 @@ export const Sensors = GObject.registerClass({
         this._addSettingChangedSignal('show-gpu', () => {
             this._reconfigureNvidiaSmiProcess();
             this._discoverGpuDrm();
+            if (!this._settings.get_boolean('show-gpu')) this._destroyFrameMonitor();
         });
         this._addSettingChangedSignal('update-time', this._reconfigureNvidiaSmiProcess.bind(this));
         this._addSettingChangedSignal('network-public-ip-interval', () => {this._next_public_ip_check = 0;});
@@ -149,12 +150,27 @@ export const Sensors = GObject.registerClass({
             this._discoverNetworkIfaces(callback);
         }
 
+        this.setFrameMonitoring(!wantedKeys || wantedKeys.has('_gpu#1_refresh_rate_'));
+        const wantedGroups = wantedKeys && new Set([...wantedKeys].map(key =>
+            key.replace(/^_+/, '').split('_')[0].split('-')[0].replace(/#\d+$/, '')));
         for (let sensor in this._sensorIcons) {
             // Process Time needs core counts from _queryProcessor even if Processor is hidden
             if (!this._settings.get_boolean('show-' + sensor)) {
                 if (sensor === 'processor' && wantedKeys &&
                     wantedKeys.has('_processor_process_time_'))
                     this._queryProcessor(callback, dwell);
+                continue;
+            }
+
+            // Keep CPU and network baselines warm for rates and session counters.
+            // Other groups can wait until a pinned item or the open menu needs them.
+            if (wantedGroups && !wantedGroups.has(sensor) && sensor !== 'processor' && sensor !== 'network' &&
+                !(sensor === 'system' && wantedKeys.has('_processor_process_time_')) &&
+                !(sensor === 'gpu' && this._nvidia_smi_process)) {
+                if (sensor === 'storage') {
+                    this._lastRead = 0;
+                    this._lastWrite = 0;
+                }
                 continue;
             }
 
@@ -567,7 +583,13 @@ export const Sensors = GObject.registerClass({
         }).catch(err => { });
     }
 
+    setFrameMonitoring(needed) {
+        if (needed && this._settings.get_boolean('show-gpu')) this._initFrameMonitor();
+        else this._destroyFrameMonitor();
+    }
+
     _initFrameMonitor() {
+        if (!this._settings.get_boolean('show-gpu')) return;
         // Prefs has no gnome-shell `global`; skip refresh-rate sampling there.
         if (typeof global === 'undefined' || !global.stage)
             return;
@@ -943,7 +965,6 @@ export const Sensors = GObject.registerClass({
         this._reconfigureNvidiaSmiProcess();
         this._discoverGpuDrm();
         this._discoverNetworkIfaces(callback);
-        this._initFrameMonitor();
     }
 
     _queryStaticInfo(callback) {

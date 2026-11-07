@@ -29,18 +29,25 @@ export function createChart(samples, length, settings, key, range, panel = false
         y_align: Clutter.ActorAlign.CENTER,
         style_class: 'vitals-chart',
     });
+    const getPalette = () => {
+        const group = key.replace(/^_+/, '').split(/[_#-]/)[0];
+        const override = chartPalette(settings, key);
+        const mode = override?.mode ?? settings.get_int('chart-color-mode');
+        const fallback = SENSOR_COLORS[group] || '#3584e4';
+        const low = colorFromHex(mode === 0 ? fallback : (override?.start || settings.get_string('chart-color-start')), fallback);
+        const high = mode === 2 ? colorFromHex((override?.end || settings.get_string('chart-color-end')), '#e01b24') : low;
+        return PALETTES[mode]?.map(color => colorFromHex(color, fallback)) || [low, high];
+    };
+    let palette = getPalette();
+    area.refreshPalette = () => {
+        palette = getPalette();
+        area.queue_repaint();
+    };
     area.connect('repaint', () => {
         const cr = area.get_context();
         const [width, height] = area.get_surface_size();
         const values = samples.slice(-length());
         if (values.length) {
-            const group = key.replace(/^_+/, '').split(/[_#-]/)[0];
-            const override = chartPalette(settings, key);
-            const mode = override?.mode ?? settings.get_int('chart-color-mode');
-            const fallback = SENSOR_COLORS[group] || '#3584e4';
-            const low = colorFromHex(mode === 0 ? fallback : (override?.start || settings.get_string('chart-color-start')), fallback);
-            const high = mode === 2 ? colorFromHex((override?.end || settings.get_string('chart-color-end')), '#e01b24') : low;
-            const palette = PALETTES[mode]?.map(color => colorFromHex(color, fallback)) || [low, high];
             const [min, max] = range(values);
             const span = max - min || 1;
             const points = values.map((value, i) => [

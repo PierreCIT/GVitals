@@ -13,6 +13,7 @@ import * as Util from 'resource:///org/gnome/shell/misc/util.js';
 import * as Sensors from './sensors.js';
 import * as Chart from './chart.js';
 import {chartRange} from './helpers/chartSettings.js';
+import {valueStyle} from './helpers/valueStyle.js';
 
 import {Extension, gettext as _} from 'resource:///org/gnome/shell/extensions/extension.js';
 
@@ -39,6 +40,9 @@ var VitalsMenuButton = GObject.registerClass({
 
         this._sensorMenuItems = {};
         this._hotLabels = {};
+        this._hotValueStyles = {};
+        this._valueFontSize = this._settings.get_int('value-font-size');
+        this._disabledCharts = new Set(this._settings.get_strv('disabled-charts'));
         this._hotItems = {};
         this._chartHistory = {};
         this._chartFormats = {};
@@ -108,6 +112,22 @@ var VitalsMenuButton = GObject.registerClass({
             this._redrawMenu();
         }, this);
 
+        this._settings.connectObject('changed::value-font-size', () => {
+            this._valueFontSize = this._settings.get_int('value-font-size');
+            for (const [key, label] of Object.entries(this._hotLabels)) {
+                label.style = valueStyle(this._hotValueStyles[key], this._valueFontSize) || null;
+                label.set_width(-1);
+                this._widths[key] = 0;
+            }
+            for (const row of Object.values(this._sensorMenuItems)) {
+                if (row instanceof MenuItem.MenuItem) row.valueFontSize = this._valueFontSize;
+            }
+            for (const group of Object.values(this._groups)) {
+                if (group._statusLabel)
+                    group._statusLabel.style = valueStyle(group._valueStyle, this._valueFontSize) || null;
+            }
+        }, this);
+
         this._settings.connectObject('changed::disabled-values', () => {
             const hidden = new Set(this._settings.get_strv('disabled-values'));
             for (const [key, label] of Object.entries(this._hotLabels))
@@ -119,7 +139,8 @@ var VitalsMenuButton = GObject.registerClass({
         }, this);
 
         this._settings.connectObject('changed::disabled-charts', () => {
-            for (const key of this._settings.get_strv('disabled-charts'))
+            this._disabledCharts = new Set(this._settings.get_strv('disabled-charts'));
+            for (const key of this._disabledCharts)
                 delete this._chartHistory[key];
             this._redrawMenu();
         }, this);
@@ -127,7 +148,7 @@ var VitalsMenuButton = GObject.registerClass({
         for (let setting of ['chart-color-mode', 'chart-color-start', 'chart-color-end', 'chart-palettes'])
             this._settings.connectObject('changed::' + setting, () => {
                 for (const chart of [...Object.values(this._panelCharts), ...Object.values(this._menuCharts)])
-                    chart.queue_repaint();
+                    chart.refreshPalette();
             }, this);
 
         for (let setting of SensorCatalog.colorSettingsKeys())
@@ -220,11 +241,15 @@ var VitalsMenuButton = GObject.registerClass({
         // query sensors on menu open
         this.menu.connectObject('open-state-changed', (menu, isMenuOpen) => {
             if (isMenuOpen) {
+                for (const chart of Object.values(this._menuCharts)) chart.queue_repaint();
                 // make sure timer fires at next full interval
                 this._initializeTimer();
 
                 // refresh sensors now
                 this._querySensors();
+            } else {
+                this._sensors.setFrameMonitoring(this._settings.get_boolean('menu-charts') ||
+                    !!this._hotLabels['_gpu#1_refresh_rate_']);
             }
         }, this);
     }
@@ -287,6 +312,7 @@ var VitalsMenuButton = GObject.registerClass({
             this._groups[groupName]._statusLabel = this._defaultLabel();
             this._groups[groupName].actor.insert_child_at_index(this._groups[groupName]._statusLabel, 4);
             this._groups[groupName]._statusLabel.text = _('No Data');
+            this._groups[groupName]._statusLabel.style = valueStyle('', this._valueFontSize) || null;
         }
 
         if(position == -1) this.menu.addMenuItem(this._groups[groupName]);
@@ -368,7 +394,7 @@ var VitalsMenuButton = GObject.registerClass({
         let label = new St.Label({
             style_class: 'vitals-panel-label',
             text: (value)?value:'\u2026', // ...
-            style: style || null,
+            style: valueStyle(style, this._valueFontSize) || null,
             y_expand: true,
             y_align: Clutter.ActorAlign.CENTER
         });
@@ -376,6 +402,7 @@ var VitalsMenuButton = GObject.registerClass({
         label.get_clutter_text().ellipsize = 0;
         // keep track of label for removal later
         this._hotLabels[key] = label;
+        this._hotValueStyles[key] = style || '';
         // prevent "called on the widget"  "which is not in the stage" errors by adding before width below
         item.add_child(label);
         label.visible = !this._settings.get_strv('disabled-values').includes(key);
@@ -425,6 +452,7 @@ var VitalsMenuButton = GObject.registerClass({
         if (key in this._hotItems) {
             delete this._panelCharts[key];
             delete this._hotLabels[key];
+            delete this._hotValueStyles[key];
             delete this._widths[key];
             this._hotItems[key].destroy();
             delete this._hotItems[key];
@@ -482,7 +510,7 @@ var VitalsMenuButton = GObject.registerClass({
     }
 
     _chartEnabled(key) {
-        return !this._settings.get_strv('disabled-charts').includes(key);
+        return !this._disabledCharts.has(key);
     }
 
     _recordChart(key, value, format = null) {
@@ -506,7 +534,7 @@ var VitalsMenuButton = GObject.registerClass({
             row.add_child(this._menuCharts[key]);
         }
         this._panelCharts[key]?.queue_repaint();
-        this._menuCharts[key]?.queue_repaint();
+        if (this.menu.isOpen) this._menuCharts[key]?.queue_repaint();
     }
 
     _updateDisplay(label, value, type, key, style) {
@@ -514,7 +542,8 @@ var VitalsMenuButton = GObject.registerClass({
         let hotLabel = this._hotLabels[key];
         if (hotLabel) {
             hotLabel.set_text(value);
-            hotLabel.style = style;
+            this._hotValueStyles[key] = style || '';
+            hotLabel.style = valueStyle(style, this._valueFontSize) || null;
 
             // support for fixed widths #55
             if (this._settings.get_boolean('fixed-widths')) {
@@ -539,7 +568,8 @@ var VitalsMenuButton = GObject.registerClass({
             let statusLabel = this._groups[group]?._statusLabel;
             if (statusLabel) {
                 statusLabel.text = value;
-                statusLabel.style = style;
+                this._groups[group]._valueStyle = style || '';
+                statusLabel.style = valueStyle(style, this._valueFontSize) || null;
                 this._sensorMenuItems[type] = this._groups[group];
             }
         } else {
@@ -558,6 +588,7 @@ var VitalsMenuButton = GObject.registerClass({
 
         let item = new MenuItem.MenuItem(gicon, key, sensor.label, sensor.value, this._hotLabels[key]);
         item.valueVisible = !this._settings.get_strv('disabled-values').includes(key);
+        item.valueFontSize = this._valueFontSize;
         item.connect('toggle', (self) => {
             let hotSensors = this._settings.get_strv('hot-sensors');
 

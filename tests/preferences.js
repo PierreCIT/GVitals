@@ -24,6 +24,12 @@ function descendants(widget, type) {
 const settings = new Gio.Settings({schema_id: 'org.gnome.shell.extensions.vitals'});
 const view = new Settings({getSettings: () => settings, path: GLib.get_current_dir(), metadata: {'gettext-domain': 'vitals'}});
 try {
+    const fontSize = view.builder.get_object('value-font-size');
+    assert(fontSize.value === 0, 'Default value font size must follow the theme');
+    fontSize.value = 15;
+    assert(settings.get_int('value-font-size') === 15, 'Value font size did not persist');
+    settings.set_int('value-font-size', 0);
+    assert(fontSize.value === 0, 'Font size did not restore theme default');
     view._add_chart_sensor('_processor_usage_', 'Usage', 'processor', true);
     view._add_chart_sensor('_storage_used_', 'Used', 'storage', true);
     view._add_chart_sensor('_system_kernel_', 'Kernel', 'system', false);

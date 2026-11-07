@@ -2,7 +2,7 @@
 
 GVitals is a GNOME Shell extension maintained by **NoeimDev**, based on [Vitals by Core Coding](https://github.com/corecoding/Vitals). It monitors hardware and system sensors asynchronously and displays their readings in the top bar and dropdown. The project repository is [PierreCIT/GVitals](https://github.com/PierreCIT/GVitals).
 
-Enable panel and dropdown charts separately under Preferences → General → Appearance. Show or hide values and charts in each sensor page, and choose per-chart colors under Individual chart colors. General settings provide defaults and history length. Choose sensor colors, a fixed color, a custom gradient, or the Jet, Viridis, Plasma and Inferno palettes. Percentages use 0–100% and storage capacity charts use 0–total capacity; other charts scale to their visible history. Menu charts poll enabled sensors while the menu is closed.
+Enable panel and dropdown charts separately under Preferences → General → Appearance. Show or hide values and charts in each sensor page, and choose per-chart colors under Individual chart colors. General settings provide defaults and history length. Choose sensor colors, a fixed color, a custom gradient, or the Jet, Viridis, Plasma and Inferno palettes. Percentages use 0–100% and storage capacity charts use 0–total capacity; other charts scale to their visible history. Menu charts poll enabled sensors while the menu is closed; turn them off to reduce background polling.
 
 The optional debug display shows GNOME Shell's resident memory, GVitals' synchronous poll dispatch time and the number of chart samples retained. Extensions run inside GNOME Shell, so the memory figure is for the whole Shell process, not GVitals alone. Dispatch time excludes asynchronous sensor I/O and is not total CPU usage.
 
@@ -39,7 +39,9 @@ gnome-extensions disable Vitals@CoreCoding.com
 
 The old files can remain installed in their original directory. The new UUID uses `GVitals@NoeimDev`, so an upstream Vitals update will not overwrite it. GVitals retains the Vitals settings schema and gettext domain, making existing preferences available. The two extensions share those settings while both are installed; run only one at a time. If the old extension is already removed, skip the disable command.
 
-After login, configure the chart switches and global defaults under **General → Appearance**, then use each sensor page to choose which values and charts appear and to override a chart's colors. History is kept only during the current session. A hidden value or chart stays hidden in both the panel and the dropdown.
+After login, configure the chart switches and global defaults under **General → Appearance**, then use each sensor page to choose which values and charts appear and to override a chart's colors. History is kept only during the current session. A hidden value or chart stays hidden in both the panel and the dropdown. Set **Value font size** to a pixel size for values in the panel and menu, or to 0 to follow the theme.
+
+Value colors are controlled separately from chart palettes. For example, GPU → Threshold colors can apply a color to every GPU percentage or to a specific sensor. A red rule starting at 0 makes every nonnegative percentage red; edit or remove the rule if that is not desired. GVitals keeps existing threshold settings when upgrading.
 
 ## GPU sensors
 
@@ -77,7 +79,7 @@ Run the automated checks from the repository root:
 ./tests/run.sh
 ```
 
-The tests need `gjs` and `glib-compile-schemas`; on Ubuntu/Debian install them with `sudo apt install gjs libglib2.0-bin`. The script compiles the schemas and uses an in-memory settings backend, so it does not change saved preferences. It covers chart scales and palettes, visibility settings, value formatting, network rates, threshold colors, NVIDIA CSV parsing, AMD and Intel DRM fixtures, metadata and an asynchronous filesystem query.
+The tests need `gjs` and `glib-compile-schemas`; on Ubuntu/Debian install them with `sudo apt install gjs libglib2.0-bin`. The script compiles the schemas and uses an in-memory settings backend, so it does not change saved preferences. It covers chart scales and palettes, visibility settings, value formatting, network rates, threshold colors, NVIDIA CSV parsing, AMD and Intel DRM fixtures, selective polling, GPU frame-monitor lifecycle, value styles, metadata and an asynchronous filesystem query.
 
 GTK preferences integration tests need a display, GTK 4 and Adwaita. To run them headlessly on Ubuntu/Debian:
 

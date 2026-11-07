@@ -50,7 +50,7 @@ GJS caches loaded modules. **Code changes require a new gnome-shell process**, n
 - X11: Alt+F2 → `restart`, then enable. Wayland sessions cannot restart in-place; log out.
 - Logs: `journalctl -f -o cat /usr/bin/gnome-shell`. Use `console.debug` / `warn` / `error`; keep volume low (journal is system-wide). `SHELL_DEBUG=backtrace-warnings` adds JS stacks. Looking Glass: Alt+F2 → `lg`.
 
-Run `./tests/run.sh` for GJS chart, formatting, network, threshold colors, GPU fixture, metadata, and asynchronous filesystem checks. Run `dbus-run-session -- xvfb-run -a ./tests/run-ui.sh` for GTK preference controls. Both compile the local schemas and use an in-memory settings backend. CI also checks JavaScript syntax, translations, and the release archive. These tests do not replace a fresh GNOME Shell session or real GPU coverage.
+Run `./tests/run.sh` for GJS chart, formatting, network, threshold colors, GPU fixture, selective polling, value styles, metadata, and asynchronous filesystem checks. Run `dbus-run-session -- xvfb-run -a ./tests/run-ui.sh` for GTK preference controls. Both compile the local schemas and use an in-memory settings backend. CI also checks JavaScript syntax, translations, and the release archive. These tests do not replace a fresh GNOME Shell session or real GPU coverage.
 
 Local clone: compile schemas after schema edits (`glib-compile-schemas --strict schemas/`). See README for installation and migration from the old UUID. The retained schema ID intentionally shares saved preferences with Vitals; do not run both extensions together.
 

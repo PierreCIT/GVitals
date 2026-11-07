@@ -1,6 +1,7 @@
 import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import St from 'gi://St'
+import {valueStyle} from './helpers/valueStyle.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 
 export const MenuItem = GObject.registerClass({
@@ -17,6 +18,8 @@ export const MenuItem = GObject.registerClass({
         this._checked = checked;
         this._updateOrnament();
 
+        this._valueStyle = '';
+        this._valueFontSize = 0;
         this._key = key;
         this._gIcon = icon;
 
@@ -69,11 +72,21 @@ export const MenuItem = GObject.registerClass({
     }
 
     set valueStyle(style) {
-        this._valueLabel.style = style || null;
+        this._valueStyle = style || '';
+        this._applyValueStyle();
     }
 
     get valueStyle() {
-        return this._valueLabel.style;
+        return this._valueStyle;
+    }
+
+    set valueFontSize(size) {
+        this._valueFontSize = size;
+        this._applyValueStyle();
+    }
+
+    _applyValueStyle() {
+        this._valueLabel.style = valueStyle(this._valueStyle, this._valueFontSize) || null;
     }
 
     // prevents menu from being closed
