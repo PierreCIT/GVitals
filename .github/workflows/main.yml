@@ -1,3 +1,4 @@
+# Modified for GVitals on 2026-11-07; based on Vitals.
 name: Build Release Asset
 
 on:
@@ -34,10 +35,7 @@ jobs:
         run: ./tests/run.sh
 
       - name: Compile message catalogs
-        run: |
-          for i in locale/*/
-              do /usr/bin/msgfmt $i/LC_MESSAGES/vitals.po -o $i/LC_MESSAGES/vitals.mo
-          done
+        run: ./tools/compile-translations.sh
 
 # at some point we either need to upload assets, or update arch batch script with above compile cmds
 #      - name: Push compiled assets
@@ -49,16 +47,16 @@ jobs:
           python-version: "3.x"
 
       - name: Build extension archive
-        run: ./tools/package.sh "$PWD/vitals.zip"
+        run: ./tools/package.sh "$PWD/GVitals.zip"
 
       - name: Verify extension archive
-        run: python3 tests/check-package.py vitals.zip --expect-translations
+        run: python3 tests/check-package.py GVitals.zip --expect-translations
 
       - name: Install shexli
         run: pip install shexli "tree-sitter<0.26"
 
       - name: Run shexli
-        run: shexli vitals.zip
+        run: shexli GVitals.zip
 
       - name: Grab version from meta data
         run: echo "METATAG=$(jq .version metadata.json)" >> $GITHUB_ENV
@@ -87,7 +85,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ env.TAG }}
-          release_name: Release ${{ env.TAG }}
+          release_name: GVitals ${{ env.TAG }}
           draft: false
           prerelease: false
 
@@ -101,6 +99,6 @@ jobs:
           # which include a `upload_url`. See this blog post for more info:
           # https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps
           upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: ./vitals.zip
-          asset_name: vitals.zip
+          asset_path: ./GVitals.zip
+          asset_name: GVitals.zip
           asset_content_type: application/zip

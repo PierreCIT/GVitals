@@ -1,3 +1,4 @@
+// Modified for GVitals on 2026-11-07; based on Vitals.
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';

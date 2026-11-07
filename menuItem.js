@@ -1,3 +1,4 @@
+// Modified for GVitals on 2026-11-07; based on Vitals.
 import Clutter from 'gi://Clutter';
 import GObject from 'gi://GObject';
 import St from 'gi://St'

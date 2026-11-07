@@ -24,6 +24,8 @@
   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+// Modified for GVitals on 2026-11-07; based on Vitals.
+
 import GObject from 'gi://GObject';
 
 import {sensorCatalog, colorsKeyForSensor} from './helpers/catalog.js';

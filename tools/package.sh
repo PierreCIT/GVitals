@@ -1,4 +1,5 @@
 #!/bin/sh
+# Modified for GVitals on 2026-11-07.
 # Create the same extension bundle locally and in CI.
 set -eu
 if [ "$#" -ne 1 ]; then
@@ -14,5 +15,6 @@ if [ -e "$output" ]; then
     echo "Output already exists: $output" >&2
     exit 1
 fi
-zip -q -r "$output" ./*.js metadata.json prefs.ui stylesheet.css helpers icons locale schemas \
-    -x 'locale/*.po' 'locale/*/LC_MESSAGES/*.po' 'locale/vitals.pot' 'schemas/gschemas.compiled'
+zip -q -r "$output" ./*.js metadata.json prefs.ui stylesheet.css LICENSE THIRD_PARTY_NOTICES.md README.md \
+    helpers icons locale schemas tools/package.sh tools/compile-translations.sh \
+    -x 'schemas/gschemas.compiled'

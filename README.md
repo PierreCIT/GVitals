@@ -1,5 +1,7 @@
 # GVitals
 
+<!-- Modified for GVitals on 2026-11-07; based on Vitals. -->
+
 GVitals is a GNOME Shell extension maintained by **NoeimDev**, based on [Vitals by Core Coding](https://github.com/corecoding/Vitals). It monitors hardware and system sensors asynchronously and displays their readings in the top bar and dropdown. The project repository is [PierreCIT/GVitals](https://github.com/PierreCIT/GVitals).
 
 Enable panel and dropdown charts separately under Preferences → General → Appearance. Show or hide values and charts in each sensor page, and choose per-chart colors under Individual chart colors. General settings provide defaults and history length. Choose sensor colors, a fixed color, a custom gradient, or the Jet, Viridis, Plasma and Inferno palettes. Percentages use 0–100% and storage capacity charts use 0–total capacity; other charts scale to their visible history. Menu charts poll enabled sensors while the menu is closed; turn them off to reduce background polling.
@@ -8,17 +10,27 @@ The optional debug display shows GNOME Shell's resident memory, GVitals' synchro
 
 ## Installation
 
-GVitals supports the GNOME Shell versions listed in `metadata.json`. The GNOME Extensions listing and distribution packages for Vitals are the original project; install this repository to use GVitals. You need Git, GNOME Shell, and `glib-compile-schemas` (on Ubuntu/Debian: `sudo apt install git libglib2.0-bin`). Some sensors also need `lm-sensors` or vendor-specific tools.
+GVitals supports the GNOME Shell versions listed in `metadata.json`. The GNOME Extensions listing and distribution packages for Vitals are the original project. Some sensors also need `lm-sensors` or vendor-specific tools.
+
+### Install or update from a release
+
+Download `GVitals.zip` from the [latest GitHub release](https://github.com/PierreCIT/GVitals/releases/latest), then run the following with the path to the downloaded file:
+
+```sh
+gnome-extensions install --force ~/Downloads/GVitals.zip
+```
+
+The `--force` option replaces an existing installation. Start a new GNOME Shell session to load the installed code: on Wayland, log out and back in; on X11, restart GNOME Shell or log out. Then enable GVitals in Extension Manager or run `gnome-extensions enable GVitals@NoeimDev`. If migrating from Vitals, follow the migration instructions below first.
 
 ### Install or update from a checkout
 
-Clone the repository once, or skip the clone if you already have a checkout. Replace `~/GVitals` with its path if needed:
+You need Git and `glib-compile-schemas` (on Ubuntu/Debian: `sudo apt install git libglib2.0-bin`). Clone the repository once, or skip the clone if you already have a checkout. Replace `~/GVitals` with its path if needed:
 
 ```sh
 git clone https://github.com/PierreCIT/GVitals.git ~/GVitals
 cd ~/GVitals
 mkdir -p ~/.local/share/gnome-shell/extensions/GVitals@NoeimDev
-cp -a ./*.js metadata.json prefs.ui stylesheet.css helpers icons locale schemas \
+cp -a ./*.js metadata.json prefs.ui stylesheet.css LICENSE THIRD_PARTY_NOTICES.md README.md helpers icons locale schemas tools \
   ~/.local/share/gnome-shell/extensions/GVitals@NoeimDev/
 glib-compile-schemas --strict ~/.local/share/gnome-shell/extensions/GVitals@NoeimDev/schemas/
 ```
@@ -48,6 +60,10 @@ Value colors are controlled separately from chart palettes. For example, GPU →
 Enable **Monitor GPU** in the GPU preferences page. NVIDIA usage, temperature and memory use `nvidia-smi` with a compatible NVIDIA driver. AMD cards use the kernel's GPU load, VRAM and hwmon interfaces when exposed. For Intel and other DRM devices, GVitals reads GPU hwmon temperature and any compatible load or VRAM interfaces exposed by the driver. Intel i915/Xe generally do not expose device-wide load and memory through these sysfs files, so those readings may be unavailable; GVitals does not request elevated permissions or estimate missing values. Hybrid NVIDIA and DRM cards are discovered together.
 
 The monitor button detects Resources and GNOME System Monitor, including supported desktop-entry installations. Set a custom monitor command in the System preferences page if you prefer another application.
+
+## License
+
+GVitals is distributed under the GNU General Public License, version 2, included in [LICENSE](LICENSE). It is a modified fork of Vitals; the original contributors retain their copyright. Some files contain additional notices, including Chris Monahan's BSD-style terms in `sensors.js` and `values.js` and the flag-icons MIT notice. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the icon credits below. GVitals is provided without warranty.
 
 ## Credits
 The original Vitals project was forked from [gnome-shell-extension-freon](https://github.com/UshakovVasilii/gnome-shell-extension-freon). GVitals builds on the work of the Vitals and Freon contributors.
@@ -88,7 +104,7 @@ sudo apt install gjs libglib2.0-bin gir1.2-gtk-4.0 gir1.2-adw-1 xvfb xauth dbus-
 dbus-run-session -- xvfb-run -a ./tests/run-ui.sh
 ```
 
-To validate a release bundle, first compile translations with `msgfmt` (as in CI), then run `./tools/package.sh /tmp/gvitals.zip` and `python3 tests/check-package.py /tmp/gvitals.zip --expect-translations`. Choose a new output path if the archive already exists. GitHub Actions runs these checks, JavaScript syntax checks and translation validation on pull requests and branch pushes; the release workflow waits for them before publishing. These tests do not exercise a running GNOME Shell or real GPU drivers.
+To validate a release bundle, install `gettext`, run `./tools/compile-translations.sh`, then run `./tools/package.sh /tmp/gvitals.zip` and `python3 tests/check-package.py /tmp/gvitals.zip --expect-translations`. Choose a new output path if the archive already exists. GitHub Actions runs these checks, JavaScript syntax checks and translation validation on pull requests and branch pushes; the release workflow waits for them before publishing. These tests do not exercise a running GNOME Shell or real GPU drivers.
 
 For a UI check, install the checkout and start a fresh Shell session. Enable panel and menu charts, check each sensor page's switches and palette, verify storage readings for the configured path, and test any available GPU. On Wayland with GNOME 49 or later, a separate development session can be started with `dbus-run-session -- gnome-shell --devkit --wayland` when `mutter-devkit` is installed. Earlier GNOME versions use `--nested --wayland`. The test session must have GVitals installed and enabled.
 

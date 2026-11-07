@@ -1,3 +1,4 @@
+# Modified for GVitals on 2026-11-07.
 name: Continuous integration
 
 on:
@@ -41,11 +42,7 @@ jobs:
         run: dbus-run-session -- xvfb-run -a ./tests/run-ui.sh
 
       - name: Validate and compile translations
-        shell: bash
-        run: |
-          for po in locale/*/LC_MESSAGES/vitals.po; do
-            msgfmt --check --output-file="${po%.po}.mo" "$po"
-          done
+        run: ./tools/compile-translations.sh
 
       - name: Build and validate release archive
         run: |

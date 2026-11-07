@@ -1,3 +1,4 @@
+// Modified for GVitals on 2026-11-07; based on Vitals.
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import { convertUint8ArrayToString } from './bytes.js';

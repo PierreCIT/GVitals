@@ -1,3 +1,4 @@
+<!-- Modified for GVitals on 2026-11-07; based on Vitals. -->
 # GVitals — agent notes
 
 GNOME Shell extension (`GVitals@NoeimDev`) that polls hardware sensors asynchronously and shows them in the top bar. Runtime is GJS ES modules (Shell 45–51). Official getting-started and practices: [Creating an extension](https://gjs.guide/extensions/development/creating.html), [Anatomy](https://gjs.guide/extensions/overview/anatomy.html), [Imports](https://gjs.guide/extensions/overview/imports-and-modules.html), [Debugging](https://gjs.guide/extensions/development/debugging.html), [Best practices](https://gjs.guide/extensions/review-guidelines/best-practices.html).
@@ -65,3 +66,7 @@ Local clone: compile schemas after schema edits (`glib-compile-schemas --strict 
 ## Chart settings
 
 Per-sensor display controls and palette overrides live on each sensor page. `chart-palettes` stores per-key overrides; absent entries inherit the General defaults. Percent charts use their full range, filesystem and GPU memory capacity charts use their respective totals, and other charts use their visible history. Keep unbounded and capacity-dependent values in their original sensor units.
+
+## Licensing
+
+Keep the original `LICENSE`, copyright notices, and third-party notices. Update the dated GVitals modification notices when changing inherited files, including the metadata field for `metadata.json`. Release archives must include the license, notices, translation source files, and build scripts; the package test checks these requirements. Verify third-party asset terms separately rather than assuming the top-level license applies to every icon.
