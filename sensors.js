@@ -54,6 +54,7 @@ export const Sensors = GObject.registerClass({
 
         this._gpu_drm_vendors = null;
         this._gpu_drm_indices = null;
+        this._gpu_drm_root = '/sys/class/drm';
         this._gpu_temperature_paths = {};
         this._nvidia_smi_process = null;
         this._nvidia_basic_query = false;
@@ -814,7 +815,7 @@ export const Sensors = GObject.registerClass({
             const vendor = (this._gpu_drm_vendors[z] || '').trim().toLowerCase();
             if (skipNvidia && vendor === '0x10de') continue;
             const typeName = 'gpu#' + (++ordinal);
-            const cardBase = '/sys/class/drm/card' + i + '/device/';
+            const cardBase = `${this._gpu_drm_root}/card${i}/device/`;
             this._returnGpuGroupHeader(callback, typeName, null);
             const names = {'0x1002': 'AMD', '0x10de': 'NVIDIA', '0x8086': 'Intel',
                 '0x13b5': 'ARM', '0x5143': 'Qualcomm', '0x1234': 'QEMU'};
@@ -1041,11 +1042,11 @@ export const Sensors = GObject.registerClass({
             this._gpu_drm_vendors = [];
             return;
         }
-        new FileModule.File('/sys/class/drm').list().then(names => {
+        new FileModule.File(this._gpu_drm_root).list().then(names => {
             const indices = names.filter(name => /^card\d+$/.test(name))
                 .map(name => Number(name.slice(4))).sort((a, b) => a - b);
             return Promise.all(indices.map(index =>
-                new FileModule.File(`/sys/class/drm/card${index}/device/vendor`).read()
+                new FileModule.File(`${this._gpu_drm_root}/card${index}/device/vendor`).read()
                     .then(vendor => ({index, vendor})).catch(() => null)));
         }).then(cards => {
             if (!this._settings.get_boolean('show-gpu')) return;

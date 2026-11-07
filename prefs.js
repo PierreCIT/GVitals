@@ -22,7 +22,7 @@ import * as ValuesModule from './values.js';
 
 const SENSOR_DISCOVERY_SETTLE_SECONDS = 2;
 
-class Settings {
+export class Settings {
     constructor(extensionObject) {
         this._extensionObject = extensionObject;
 
@@ -66,6 +66,7 @@ class Settings {
         for (const key of new Set([...this._settings.get_strv('disabled-charts'), ...this._settings.get_strv('disabled-values')]))
             this._add_chart_sensor(key, labelFromSensorKey(key), '', false);
         this._sensorDiscoveryTimeoutId = 0;
+        this._sensorDiscoverySecondPassId = 0;
         this._bind_sensor_page_gates();
         this._bind_settings();
         this._start_sensor_discovery();
@@ -86,6 +87,10 @@ class Settings {
     }
 
     destroy() {
+        if (this._sensorDiscoverySecondPassId) {
+            GLib.Source.remove(this._sensorDiscoverySecondPassId);
+            this._sensorDiscoverySecondPassId = 0;
+        }
         if (this._sensorDiscoveryTimeoutId) {
             GLib.source_remove(this._sensorDiscoveryTimeoutId);
             this._sensorDiscoveryTimeoutId = 0;
@@ -102,6 +107,7 @@ class Settings {
 
         this._sensors = new SensorsModule.Sensors(this._settings, sensorCatalog, _);
         let collect = (label, value, type, format) => {
+            if (!this._sensors) return;
             this._collect_discovered_sensor(label, type, format);
             if (!type || type.endsWith('-group') || value === 'disabled' || value === 'destroy') return;
             const key = sensorKeyFromTypeLabel(type, label);
@@ -117,7 +123,8 @@ class Settings {
 
         // First pass starts hwmon discovery; second pass fills processor deltas.
         this._sensors.query(collect, 1);
-        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
+        this._sensorDiscoverySecondPassId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
+            this._sensorDiscoverySecondPassId = 0;
             if (this._sensors)
                 this._sensors.query(collect, 1);
             return GLib.SOURCE_REMOVE;

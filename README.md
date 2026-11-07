@@ -77,7 +77,16 @@ Run the automated checks from the repository root:
 ./tests/run.sh
 ```
 
-They need `gjs` and `glib-compile-schemas`; on Ubuntu/Debian install them with `sudo apt install gjs libglib2.0-bin`. The script compiles the schemas and uses an in-memory settings backend, so it does not change saved preferences. It covers chart scales and palettes, visibility settings, NVIDIA CSV parsing, metadata and an asynchronous filesystem query. It does not exercise the GNOME Shell UI or real GPU drivers.
+The tests need `gjs` and `glib-compile-schemas`; on Ubuntu/Debian install them with `sudo apt install gjs libglib2.0-bin`. The script compiles the schemas and uses an in-memory settings backend, so it does not change saved preferences. It covers chart scales and palettes, visibility settings, value formatting, network rates, threshold colors, NVIDIA CSV parsing, AMD and Intel DRM fixtures, metadata and an asynchronous filesystem query.
+
+GTK preferences integration tests need a display, GTK 4 and Adwaita. To run them headlessly on Ubuntu/Debian:
+
+```sh
+sudo apt install gjs libglib2.0-bin gir1.2-gtk-4.0 gir1.2-adw-1 xvfb xauth dbus-x11
+dbus-run-session -- xvfb-run -a ./tests/run-ui.sh
+```
+
+To validate a release bundle, first compile translations with `msgfmt` (as in CI), then run `./tools/package.sh /tmp/gvitals.zip` and `python3 tests/check-package.py /tmp/gvitals.zip --expect-translations`. Choose a new output path if the archive already exists. GitHub Actions runs these checks, JavaScript syntax checks and translation validation on pull requests and branch pushes; the release workflow waits for them before publishing. These tests do not exercise a running GNOME Shell or real GPU drivers.
 
 For a UI check, install the checkout and start a fresh Shell session. Enable panel and menu charts, check each sensor page's switches and palette, verify storage readings for the configured path, and test any available GPU. On Wayland with GNOME 49 or later, a separate development session can be started with `dbus-run-session -- gnome-shell --devkit --wayland` when `mutter-devkit` is installed. Earlier GNOME versions use `--nested --wayland`. The test session must have GVitals installed and enabled.
 
@@ -89,7 +98,8 @@ For a UI check, install the checkout and start a fresh Shell session. Enable pan
 | View logs | ``journalctl --since="`date '+%Y-%m-%d %H:%M'`" -f \| grep Vitals`` |
 | Compile schemas | `glib-compile-schemas --strict schemas/` |
 | Compile translation file | `msgfmt vitals.po -o vitals.mo` |
-| Run automated tests | `./tests/run.sh` |
+| Run logic and sensor tests | `./tests/run.sh` |
+| Run GTK tests headlessly | `dbus-run-session -- xvfb-run -a ./tests/run-ui.sh` |
 | Launch GNOME 49+ Wayland devkit | `dbus-run-session -- gnome-shell --devkit --wayland` |
 | Read hot-sensors value | `dconf read /org/gnome/shell/extensions/vitals/hot-sensors` |
 | Write hot-sensors value | `dconf write /org/gnome/shell/extensions/vitals/hot-sensors "['_memory_usage_', '_system_load_1m_']"`<br/>This value configures the list of sensors that show up in the panel. To specify a sensor name, click on the extension to show the drop-down menu, then take the category label and the label of the individual sensor, convert them to `snake_case`, and format them like this: `_category_sensor_`.|
