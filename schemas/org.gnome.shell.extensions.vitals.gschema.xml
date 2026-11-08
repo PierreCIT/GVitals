@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Modified for GVitals on 2026-11-07; based on Vitals. -->
+<!-- Modified for GVitals on 2026-11-08; based on Vitals. -->
 <schemalist gettext-domain="gnome-shell-extensions">
   <schema id="org.gnome.shell.extensions.vitals" path="/org/gnome/shell/extensions/vitals/">
     <key name="hot-sensors" type="as">
@@ -218,6 +218,11 @@
       <default>[]</default>
       <summary>System load color thresholds</summary>
       <description>Color rules matched against system load average. Entries are "threshold r g b" or "threshold r g b sensor:&lt;key&gt;". Unknown sensor keys are ignored.</description>
+    </key>
+    <key name="storage-colors" type="as">
+      <default>[]</default>
+      <summary>Storage percentage color thresholds</summary>
+      <description>Color rules matched against used or free filesystem percentage. Entries are "threshold r g b" or "threshold r g b sensor:&lt;key&gt;".</description>
     </key>
     <key name="battery-colors" type="as">
       <default>[]</default>

@@ -38,6 +38,13 @@ same(sanitizeAndSortColorEntries(['20 0 1 0', 'bad', '10 1 0 0']).map(item => it
 const colors = ['0 0 0 1', '50 1 0 0', '20 0 1 0 sensor:_processor_usage_'];
 assert(getUsageColor(60, colors, '_other_') === 'color: rgb(255, 0, 0);', 'Group threshold color');
 assert(getUsageColor(60, colors, '_processor_usage_') === 'color: rgb(0, 255, 0);', 'Sensor threshold color');
+settings.set_strv('storage-colors', ['80 1 0 0 sensor:_storage_used_%_', '20 0 1 0 sensor:_storage_free_%_']);
+const used = values.returnIfDifferent(5, 'Used %', 0.85, 'storage', 'percent', '_storage_used_%_');
+assert(used.some(item => item.value === '85.0%' && item.style === 'color: rgb(255, 0, 0);'), 'Storage used threshold');
+const free = values.returnIfDifferent(5, 'Free %', 0.1, 'storage', 'percent', '_storage_free_%_');
+assert(free.some(item => item.value === '10.0%' && item.style === ''), 'Storage free threshold below breakpoint');
+const diskBytes = values.returnIfDifferent(5, 'Used', 85, 'storage', 'storage', '_storage_used_');
+assert(diskBytes.every(item => item.style === ''), 'Percentage thresholds do not affect byte values');
 same(sensorKeyFromTypeLabel('network-us', 'Public IP'), '_network_public_ip_', 'Geolocation key');
 same(sensorKeyFromTypeLabel('gpu#2', 'Memory Usage'), '_gpu#2_memory_usage_', 'GPU key');
 print('Formatting, network rates and color threshold checks passed');

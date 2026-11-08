@@ -59,19 +59,25 @@ equal(readings['gpu#2:Temperature'], 65000, 'Basic NVIDIA temperature');
 
 // Exercise the real async filesystem API on / without assuming a specific disk size.
 const loop = new GLib.MainLoop(null, false);
-let total = null;
+const storageReadings = {};
+let storageComplete = false;
 const timeout = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
     loop.quit();
     return GLib.SOURCE_REMOVE;
 });
 sensors._queryStorage((label, value) => {
-    if (label === 'Total') {
-        total = value;
+    storageReadings[label] = value;
+    if (['Total', 'Used', 'Free', 'Used %', 'Free %'].every(key => key in storageReadings)) {
+        storageComplete = true;
         loop.quit();
     }
 }, 5);
 loop.run();
-if (total !== null) GLib.Source.remove(timeout);
+if (storageComplete) GLib.Source.remove(timeout);
 sensors.destroy();
-if (!Number.isFinite(total) || total <= 0) throw new Error('Asynchronous filesystem usage unavailable');
+if (!storageComplete || !Number.isFinite(storageReadings.Total) || storageReadings.Total <= 0 ||
+    !Number.isFinite(storageReadings.Used) || storageReadings.Used < 0 ||
+    !Number.isFinite(storageReadings.Free) || storageReadings.Free < 0 ||
+    !Number.isFinite(storageReadings['Used %']) || !Number.isFinite(storageReadings['Free %']))
+    throw new Error('Asynchronous filesystem capacity readings unavailable');
 print(`Passed ${cases.length + 17} checks (charts, preferences, NVIDIA and filesystem usage)`);

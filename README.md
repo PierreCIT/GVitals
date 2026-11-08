@@ -1,10 +1,14 @@
 # GVitals
 
-<!-- Modified for GVitals on 2026-11-07; based on Vitals. -->
+<!-- Modified for GVitals on 2026-11-08; based on Vitals. -->
 
 GVitals is a GNOME Shell extension maintained by **NoeimDev**, based on [Vitals by Core Coding](https://github.com/corecoding/Vitals). It monitors hardware and system sensors asynchronously and displays their readings in the top bar and dropdown. The project repository is [PierreCIT/GVitals](https://github.com/PierreCIT/GVitals).
 
 Enable panel and dropdown charts separately under Preferences → General → Appearance. Show or hide values and charts in each sensor page, and choose per-chart colors under Individual chart colors. General settings provide defaults and history length. Choose sensor colors, a fixed color, a custom gradient, or the Jet, Viridis, Plasma and Inferno palettes. Percentages use 0–100% and storage capacity charts use 0–total capacity; other charts scale to their visible history. Menu charts poll enabled sensors while the menu is closed; turn them off to reduce background polling.
+
+Under Preferences → Storage, set Path to an existing directory on the filesystem you want to monitor (for example, `/` or a mounted disk's directory). The Storage menu shows its total, used, and free space and percentages, along with disk read and write statistics when available. Select a reading in the menu to show it in the top bar. To monitor a different filesystem, change the path.
+
+In Storage → Threshold Colors, add a color scale for Used % or Free %. Breakpoints are percentages: for example, a red breakpoint at 90 colors Used % when usage reaches 90%. Each color applies at its breakpoint and above, so a low-free-space warning can use a red breakpoint at 0 and a normal color at the desired free-space threshold.
 
 The optional debug display shows GNOME Shell's resident memory, GVitals' synchronous poll dispatch time and the number of chart samples retained. Extensions run inside GNOME Shell, so the memory figure is for the whole Shell process, not GVitals alone. Dispatch time excludes asynchronous sensor I/O and is not total CPU usage.
 

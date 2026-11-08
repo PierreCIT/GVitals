@@ -24,7 +24,7 @@
   SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-// Modified for GVitals on 2026-11-07; based on Vitals.
+// Modified for GVitals on 2026-11-08; based on Vitals.
 
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
@@ -449,8 +449,8 @@ export const Sensors = GObject.registerClass({
                     this._returnValue(callback, 'Total', total, 'storage', 'storage');
                     this._returnValue(callback, 'Used', used, 'storage', 'storage');
                     this._returnValue(callback, 'Free', free, 'storage', 'storage');
-                    this._returnValue(callback, 'Used %', (total ? Math.round(used / total * 100) : 0) + '%', 'storage', 'string');
-                    this._returnValue(callback, 'Free %', (total ? Math.round(free / total * 100) : 0) + '%', 'storage', 'string');
+                    this._returnValue(callback, 'Used %', total ? used / total : 0, 'storage', 'percent');
+                    this._returnValue(callback, 'Free %', total ? free / total : 0, 'storage', 'percent');
                     this._returnValue(callback, 'storage', free, 'storage-group', 'storage');
                 } catch (err) {
                     console.warn(`Vitals: cannot read filesystem usage for ${path}: ${err.message}`);
